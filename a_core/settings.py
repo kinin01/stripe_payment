@@ -88,6 +88,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'a_stripe.context_processors.cart',
             ],
         },
     },
@@ -158,6 +159,7 @@ ACCOUNT_SIGNUP_REDIRECT_URL = "{% url 'account_signup' %}?next={% url 'profile-o
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 ACCOUNT_AUTHENTICATION_METHOD = 'email'
 ACCOUNT_EMAIL_REQUIRED = True
-
-
 STRIPE_SECRET_KEY = env('STRIPE_SECRET_KEY_TEST', default="secret")
+
+CART_SESSION_ID = 'cart'
+SESSION_COOKIE_AGE = 86400
