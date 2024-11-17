@@ -9,10 +9,17 @@
         <div class="pt-32">
            <h2>{{ product.name }}</h2>
            <p class="text-lg">$ {{ product.price }}</p>
-
-           <a href=" " class="button !block !rounded-full !bg-black hover: !bg-neutral-500 text-center">
+               {% if not product.}
+               
+            {% if user.is_authenticated % }
+           <a href="{% url 'add_to_cart' product.id %} " class="button !block !rounded-full !bg-black hover: !bg-neutral-500 text-center">
               add to cart
            </a>
+           {% else %}
+           <a href="{% url 'account_login' %}?next={{ request.path}}" class="button !block !rounded-full !bg-black hover: !bg-neutral-500 text-center">
+            add to cart
+           </a>
+           {% endif %}
            
            <p class="pt-8 text-sm">{{ product.description }}</p>
            <p class="text-sm hover:underline"><a href="https://andreas-juds-store.creator-spring.com/listing/the-og-stack?product=790&variation=103520" target="_blank">Get it here</a></p>
