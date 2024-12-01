@@ -1,19 +1,77 @@
 from django.db import models
 from django.contrib.auth.models import User
+from colorfield.fields import ColorField 
 
-class UserPayment(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    stripe_customer = models.CharField(max_length=500, blank=True)
-    stripe_checkout_id = models.CharField(max_length=500, blank=True)
-    stripe_product_id = models.CharField(max_length=500, blank=True)
-    product_name = models.CharField(max_length=500, blank=True)
-    quantity = models.IntegerField(default=1)
-    price = models.DecimalField(max_digits=10, decimal_places=2, null=True)
-    currency = models.CharField(max_length=3, blank=True)
-    has_paid = models.BooleanField(default=False)
+import stripe
+from django.conf import settings
+stripe.api_key = settings.STRIPE_SECRET_KEY
+
+
+class ProductColor(models.Model):
+    name = models.CharField(max_length=100)
+    color = ColorField(default='#000000') 
     
     def __str__(self):
-        return f"{self.user.username} - {self.product_name} - Paid: {self.has_paid}"
+        return self.name
+    
+    
+class ProductSize(models.Model):
+    name = models.CharField(max_length=50)
+    size = models.CharField(max_length=50)
+    
+    def __str__(self):
+        return self.name
+    
+    
+class ProductVariation(models.Model):
+    product_id = models.CharField(max_length=255)
+    colors = models.ManyToManyField(ProductColor)
+    sizes = models.ManyToManyField(ProductSize)
+    
+    @property
+    def prices(self):
+        prices = []
+        price_list = stripe.Price.list(product=self.product_id)
+        for price in price_list['data']:
+            quality = price['metadata'].get('quality') or 'Normal'
+            prices.append({
+                'quality': quality,
+                'price': price['unit_amount'] / 100,
+            })
+        prices = sorted(prices, key=lambda x: x['price'])
+        return prices
+    
+    def get_price(self, quality=None):
+        if quality:
+            price_list = stripe.Price.list(product=self.product_id)
+            for price in price_list['data']:
+                price_quality = price['metadata'].get('quality') or None
+                if price_quality and price_quality.lower() == quality.lower():
+                    return price
+        product = stripe.Product.retrieve(self.product_id)
+        default_price_id = product.default_price
+        price = stripe.Price.retrieve(default_price_id)
+        return price
+    
+    def __str__(self):
+        product = stripe.Product.retrieve(self.product_id)
+        return product['name']
+    
+    
+class ProductVariationObject(models.Model):
+    product = models.ForeignKey(ProductVariation, on_delete=models.CASCADE)
+    color = models.ForeignKey(ProductColor, on_delete=models.SET_NULL, null=True)
+    image_front = models.ImageField(upload_to="product_variations/", blank=True, null=True)
+    image_back = models.ImageField(upload_to="product_variations/", blank=True, null=True)
+    featured = models.BooleanField(default=False)
+    
+    def save(self, *args, **kwargs):
+        if self.featured:
+            ProductVariationObject.objects.filter(product=self.product).update(featured=False)
+        super().save(*args, **kwargs)
+        
+    def __str__(self):
+        return f"{self.product} - {self.color}"
     
     
 class ShippingInfo(models.Model):
@@ -29,6 +87,7 @@ class ShippingInfo(models.Model):
     
     def __str__(self):
         return f'{self.first_name} {self.last_name}'
+    
     
 class CheckoutSession(models.Model):
     checkout_id = models.CharField(max_length=255)

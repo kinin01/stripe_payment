@@ -13,32 +13,80 @@ from .forms import *
 stripe.api_key = settings.STRIPE_SECRET_KEY
 
 def shop_view(request):
+    # del request.session[settings.CART_SESSION_ID]
     products_list = stripe.Product.list()
     products = []
     
     for product in products_list['data']:
         if product.get('metadata', {}).get('category') == "shop":
-            products.append(get_product_details(product)) 
+            products.append(get_product_details(product, None)) 
         
     return render(request, 'a_stripe/shop.html', {'products': products})
 
 
 def product_view(request, product_id):
+    product_variation = ProductVariation.objects.filter(product_id=product_id).first()
+    quality = None 
+    if product_variation:
+        product_variation_list = ProductVariationObject.objects.filter(product=product_variation)
+        product_variation_obj = product_variation_list.filter(featured=True).first() or product_variation_list.first()
+    
+        color = request.GET.get('color') or None
+        if color:
+            color_obj = ProductColor.objects.get(name__iexact=color)
+            product_variation_obj = product_variation_list.get(color=color_obj)
+            
+        size = request.GET.get('size') or 's'
+        quality = request.GET.get('quality') or 'normal'
+    
     product = stripe.Product.retrieve(product_id)
-    product_details = get_product_details(product)
+    product_details = get_product_details(product, quality)
+
+    context = {
+       'product': product_details,
+    }
     
-    cart = Cart(request)
-    product_details['in_cart'] = product_id in cart.cart_session
+    if product_variation:
+        context.update({
+            'product_variation': product_variation,
+            'product_variation_obj': product_variation_obj,
+            'color': color,
+            'size': size,
+            'quality': quality,
+        })
     
-    return render(request, 'a_stripe/product.html', {'product': product_details})
+    return render(request, 'a_stripe/product.html', context)
 
 
 def add_to_cart(request, product_id):
-    cart = Cart(request)
-    cart.add(product_id)
-    
     product = stripe.Product.retrieve(product_id)
-    product_details = get_product_details(product)
+    product_variation = ProductVariation.objects.filter(product_id=product_id).first()
+    try:
+        featured_product = ProductVariationObject.objects.get(product=product_variation, featured=True)
+        featured_product_color = featured_product.color.name
+    except:
+        featured_product_color = None
+    color = request.GET.get('color') or featured_product_color 
+    color = color.capitalize() if color else None
+    
+    size = request.GET.get('size') or ('s' if product_variation else None)
+    size = size.upper() if size else None
+    
+    quality = request.GET.get('quality') or ('normal' if product_variation else None)
+    quality = quality.capitalize() if quality else None
+    
+    try:
+        color_obj = ProductColor.objects.get(name__iexact=color)
+        product_variation_obj = ProductVariationObject.objects.get(product=product_variation, color=color_obj)
+        # image = request.build_absolute_uri(product_variation_obj.image_front.url)
+        image = 'https://res.cloudinary.com/dpuzdancn/image/upload/f_auto,q_auto/v1/static/dksqceytazezyi1ustia'
+    except:
+        image = product['images'][0]
+    
+    cart = Cart(request)
+    cart.add(product_id, color=color, size=size, quality=quality, image=image)
+    
+    product_details = get_product_details(product, quality)
     product_details['in_cart'] = product_id in cart.cart_session
 
     response = render(request, 'a_stripe/partials/cart-button.html', {'product': product_details})
@@ -55,14 +103,17 @@ def cart_view(request):
     return render(request, 'a_stripe/cart.html', {'quantity_range': quantity_range})
 
 
-def update_checkout(request, product_id):
+def update_checkout(request, item_id):
     quantity = int(request.POST.get('quantity', 1))
+    quality = request.POST.get('quality')
     cart = Cart(request)
-    cart.add(product_id, quantity)
+    product_id = cart.cart_session.get(item_id)['product_id']
+    cart.add(product_id, quantity, item_id=item_id)
     
     product = stripe.Product.retrieve(product_id)
-    product_details = get_product_details(product)
+    product_details = get_product_details(product, quality)
     product_details['total_price'] = product_details['price'] * quantity
+    product_details['item_id'] = item_id
 
     response = render(request, 'a_stripe/partials/checkout-total.html', {'product' : product_details}) 
     response['HX-Trigger'] = 'hx_menu_cart'
